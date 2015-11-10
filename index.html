@@ -1,0 +1,206 @@
+
+<html>
+	<head>
+		<style>
+			video, canvas {
+				position: absolute;
+				top:0px;
+				left: 0px;
+			}
+			.myVideoContainer {
+				height: 240px;
+				position: relative;
+			}
+			#otherVideoContainer {
+				height: 240px;	
+				margin-left: 400px;
+				position: absolute;
+				top: 26px;
+				width: 320px;
+			}
+		</style>
+		<script src="peer.min.js"></script>
+		<script src="tracking-min.js"></script>
+  		<script src="face-min.js"></script>
+		
+		<script type="text/javascript">
+			var canvas;
+			var context;
+			var myvideo = null;
+			var mystream = null;
+			var mypeerid = null;
+			var peer = null;
+			var connection = null;
+			var connected = false;
+
+			window.URL = window.URL || window.webkitURL || window.mozURL || window.msURL;
+			
+			navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+			
+			function init() {
+				myvideo = document.getElementById('myvideo');
+				
+				if (navigator.getUserMedia) {
+					// http://src.chromium.org/svn/trunk/src/chrome/test/data/webrtc/manual/constraints.html
+					navigator.getUserMedia({video: true, audio: false}, 
+						function(stream) {
+							mystream = stream;
+							// myvideo.src = window.URL.createObjectURL(stream) || stream;
+							// myvideo.play();
+						}, 
+						function(err) {
+							console.log('Failed to get local stream' ,err);
+							alert("Failed to get local stream " + err);
+						}
+					);
+				}
+
+				//FACE DETECTION
+				canvas = document.getElementById('canvas');
+      			context = canvas.getContext('2d');
+				var tracker = new tracking.ObjectTracker('face');
+
+			    tracker.setInitialScale(4);
+			    tracker.setStepSize(2);
+			    tracker.setEdgesDensity(0.1);
+			    tracking.track('#myvideo', tracker, { camera: true });
+			    tracker.on('track', function(event) {
+			        context.clearRect(0, 0, canvas.width, canvas.height);
+			        
+			        if(connected && event.data.length > 0) {
+			       		connection.send(event.data[0]);	
+			        }
+			       
+			        event.data.forEach(function(rect) {
+			          	context.strokeStyle = '#a64ceb';
+			          	context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+			          	context.font = '11px Helvetica';
+			          	context.fillStyle = "#fff";
+			          	context.fillText('x: ' + rect.x + 'px', rect.x + rect.width + 5, rect.y + 11);
+			          	context.fillText('y: ' + rect.y + 'px', rect.x + rect.width + 5, rect.y + 22);
+			        });
+			    });
+
+				// //P2P
+				peer = new Peer({key: 'uohu08l7r6swcdi'});
+				var call = document.getElementById("callbutton");
+				call.addEventListener('click', placecall);
+				
+				peer.on('open', function(id) {
+				  console.log('My peer ID is: ' + id);
+				  mypeerid = id;
+				});
+					
+				peer.on('call', function(call) {
+					call.answer(mystream);
+//we get called
+//this is what happens when we recieve a stream
+					call.on('stream', function(remoteStream) {
+				      	var otherVideoContainer = document.getElementById("otherVideoContainer");
+						var otherCanvas = document.getElementById("otherCanvas");
+
+						var othervideo = document.createElement("video");
+						othervideo.width = 320;
+						othervideo.height = 240;
+						othervideo.src = window.URL.createObjectURL(remoteStream) || remoteStream;
+						otherVideoContainer.insertBefore(othervideo, otherCanvas);
+						othervideo.play();
+				    });					
+				});	
+
+				peer.on('connection', function(conn) {
+					connection = conn;
+
+					connection.on('open', function() {
+						connected = true;
+					});
+					
+					var otherCanvas = document.getElementById('otherCanvas');
+      				var otherContext = otherCanvas.getContext('2d');
+
+					//listener for when we recieve data from the other user's connection.send call
+					connection.on('data', function(data) {
+						console.log(data);
+						//receive data on where the other person's face is
+						otherContext.clearRect(0, 0, otherCanvas.width, otherCanvas.height);
+			       
+		             	otherContext.strokeStyle = '#a64ceb';
+			          	otherContext.strokeRect(data.x + 20, data.y, data.width, data.height);
+			          	otherContext.font = '11px Helvetica';
+			          	otherContext.fillStyle = "#fff";
+			          	otherContext.fillText('x: ' + data.x + 'px', data.x + data.width + 5, data.y + 11);
+			          	otherContext.fillText('y: ' + data.y + 'px', data.x + data.width + 5, data.y + 22);
+			       
+					});
+				});
+
+			};	
+			
+			var placecall = function() {				
+					var call = peer.call(document.getElementById('other_peer_id').value, mystream);
+
+//we call someone
+//we get their stream back
+						call.on('stream', function(remoteStream) {
+						// Show stream in some video/canvas element.
+							var otherVideoContainer = document.getElementById("otherVideoContainer");
+							var otherCanvas = document.getElementById("otherCanvas");
+
+							var othervideo = document.createElement("video");
+							othervideo.width = 320;
+							othervideo.height = 240;
+							othervideo.src = window.URL.createObjectURL(remoteStream) || remoteStream;
+							otherVideoContainer.insertBefore(othervideo, otherCanvas);
+							othervideo.play();
+					});
+
+				connection = peer.connect(document.getElementById('other_peer_id').value);
+				connection.on('open', function() {
+					connected = true;
+				});
+				connection.on('data', function(data) {
+					//receive data on where the other person's face is
+					console.log(data);
+
+					var otherCanvas = document.getElementById('otherCanvas');
+      				var otherContext = otherCanvas.getContext('2d');
+
+					//listener for when we recieve data from the other user's connection.send call
+					connection.on('data', function(data) {
+						console.log(data);
+						//receive data on where the other person's face is
+						otherContext.clearRect(0, 0, otherCanvas.width, otherCanvas.height);
+			       
+			          	otherContext.strokeStyle = '#a64ceb';
+			          	otherContext.strokeRect(data.x, data.y, data.width, data.height);
+			          	otherContext.font = '11px Helvetica';
+			          	otherContext.fillStyle = "#fff";
+			          	otherContext.fillText('x: ' + data.x + 'px', data.x + data.width + 5, data.y + 11);
+			          	otherContext.fillText('y: ' + data.y + 'px', data.x + data.width + 5, data.y + 22);
+			       
+					});
+				});
+
+			};	
+
+			window.addEventListener('load', init);
+		</script>
+	</head>
+	
+	<body>
+My video:
+<div class="myVideoContainer">		
+		<video id="myvideo" width="320" height="240" preload autoplay loop muted></video>
+		<canvas id="canvas" width="320" height="240"></canvas>	
+</div>
+		<input type="text" id="other_peer_id">
+		<div id="callbutton">Call</div>
+		<div id="otherVideoContainer">
+			<canvas id="otherCanvas" width="320" height="240"></canvas>	
+		</div>
+	</body>
+</html>
+
+
+
+
